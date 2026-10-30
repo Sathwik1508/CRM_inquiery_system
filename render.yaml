@@ -1,0 +1,18 @@
+services:
+  - type: web
+    name: edtech-crm-inquiry-system
+    runtime: node
+    plan: free
+    buildCommand: npm install
+    startCommand: npm start
+    envVars:
+      - key: PORT
+        value: 5000
+      - key: JWT_SECRET
+        generateValue: true
+      - key: DATABASE_URL
+        sync: false
+      - key: ADMIN_EMAIL
+        value: admin@edtech.com
+      - key: ADMIN_PASSWORD
+        value: Admin@123

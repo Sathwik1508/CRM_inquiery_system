@@ -1,0 +1,264 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>EdTech Admin Dashboard</title>
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <div class="container">
+      <header class="topbar">
+        <div class="brand">EdTech CRM</div>
+        <nav>
+          <a class="nav-link" href="/">Public Inquiry</a>
+          <a class="nav-link" href="/admin">Admin Login</a>
+        </nav>
+      </header>
+
+      <div class="admin-shell">
+        <aside id="loginCard" class="login-card">
+          <h2>Admin Login</h2>
+          <form id="loginForm">
+            <div class="field" style="margin-bottom: 16px;">
+              <label for="adminEmail">Email</label>
+              <input id="adminEmail" type="email" placeholder="admin@edtech.com" required />
+            </div>
+
+            <div class="field" style="margin-bottom: 18px;">
+              <label for="adminPassword">Password</label>
+              <input id="adminPassword" type="password" placeholder="Enter password" required />
+            </div>
+
+            <button type="submit" class="primary-btn" style="width: 100%;">Login</button>
+          </form>
+          <div id="loginNotice" class="notice"></div>
+        </aside>
+
+        <main id="dashboardView" class="dashboard-card hidden">
+          <div class="logout-row">
+            <div>
+              <h2>All Inquiries</h2>
+            </div>
+            <button id="logoutButton" class="secondary-btn">Logout</button>
+          </div>
+
+          <div class="filter-bar">
+            <div class="field">
+              <label for="categoryFilter">Category</label>
+              <select id="categoryFilter">
+                <option value="All">All</option>
+                <option value="Scholarship">Scholarship</option>
+                <option value="Concert">Concert</option>
+                <option value="Admission">Admission</option>
+                <option value="General Query">General Query</option>
+              </select>
+            </div>
+
+            <div class="field">
+              <label for="userTypeFilter">User Type</label>
+              <select id="userTypeFilter">
+                <option value="All">All</option>
+                <option value="Parent">Parent</option>
+                <option value="Student">Student</option>
+                <option value="School">School</option>
+              </select>
+            </div>
+
+            <div class="field">
+              <label for="searchInput">Search</label>
+              <input id="searchInput" type="search" placeholder="Name or phone" />
+            </div>
+          </div>
+
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Name</th>
+                  <th>Phone</th>
+                  <th>Email</th>
+                  <th>User Type</th>
+                  <th>Category</th>
+                  <th>Date</th>
+                  <th>Status</th>
+                </tr>
+              </thead>
+              <tbody id="inquiriesTableBody"></tbody>
+            </table>
+          </div>
+        </main>
+      </div>
+    </div>
+
+    <script>
+      const loginCard = document.getElementById('loginCard');
+      const dashboardView = document.getElementById('dashboardView');
+      const loginForm = document.getElementById('loginForm');
+      const loginNotice = document.getElementById('loginNotice');
+      const categoryFilter = document.getElementById('categoryFilter');
+      const userTypeFilter = document.getElementById('userTypeFilter');
+      const searchInput = document.getElementById('searchInput');
+      const inquiriesTableBody = document.getElementById('inquiriesTableBody');
+
+      function showLoginNotice(message, type) {
+        loginNotice.textContent = message;
+        loginNotice.className = `notice show ${type}`;
+      }
+
+      function getToken() {
+        return localStorage.getItem('edtech-admin-token');
+      }
+
+      function saveToken(token) {
+        localStorage.setItem('edtech-admin-token', token);
+      }
+
+      function clearToken() {
+        localStorage.removeItem('edtech-admin-token');
+      }
+
+      function formatDate(dateString) {
+        return new Date(dateString).toLocaleString();
+      }
+
+      function renderInquiries(rows) {
+        if (!rows.length) {
+          inquiriesTableBody.innerHTML = '<tr><td colspan="7" class="empty-state">No inquiries found.</td></tr>';
+          return;
+        }
+
+        inquiriesTableBody.innerHTML = rows.map((row) => {
+          const statusOptions = ['new', 'in-review', 'resolved']
+            .map((status) => `<option value="${status}" ${status === row.status ? 'selected' : ''}>${status}</option>`)
+            .join('');
+
+          return `
+            <tr>
+              <td>${row.name}</td>
+              <td>${row.phone}</td>
+              <td>${row.email}</td>
+              <td>${row.user_type}</td>
+              <td>${row.category}</td>
+              <td>${formatDate(row.created_at)}</td>
+              <td>
+                <span class="badge ${row.status}">${row.status}</span>
+                <div style="margin-top: 8px;">
+                  <select class="status-select" data-id="${row.id}">
+                    ${statusOptions}
+                  </select>
+                </div>
+              </td>
+            </tr>
+          `;
+        }).join('');
+
+        inquiriesTableBody.querySelectorAll('.status-select').forEach((select) => {
+          select.addEventListener('change', async (event) => {
+            const inquiryId = event.target.dataset.id;
+            const status = event.target.value;
+
+            try {
+              const response = await fetch(`/api/admin/inquiries/${inquiryId}/status`, {
+                method: 'PUT',
+                headers: {
+                  'Content-Type': 'application/json',
+                  Authorization: `Bearer ${getToken()}`,
+                },
+                body: JSON.stringify({ status }),
+              });
+
+              const result = await response.json();
+
+              if (!response.ok) {
+                throw new Error(result.message || 'Unable to update status.');
+              }
+
+              showLoginNotice('Inquiry status updated successfully.', 'success');
+              await loadInquiries();
+            } catch (error) {
+              showLoginNotice(error.message || 'Unable to update status.', 'error');
+            }
+          });
+        });
+      }
+
+      async function loadInquiries() {
+        const category = categoryFilter.value;
+        const userType = userTypeFilter.value;
+        const search = searchInput.value.trim();
+
+        try {
+          const response = await fetch(`/api/admin/inquiries?category=${encodeURIComponent(category)}&userType=${encodeURIComponent(userType)}&search=${encodeURIComponent(search)}`, {
+            headers: {
+              Authorization: `Bearer ${getToken()}`,
+            },
+          });
+
+          const rows = await response.json();
+
+          if (!response.ok) {
+            throw new Error(rows.message || 'Unable to load inquiries.');
+          }
+
+          renderInquiries(rows);
+        } catch (error) {
+          showLoginNotice(error.message || 'Unable to load inquiries.', 'error');
+          inquiriesTableBody.innerHTML = '<tr><td colspan="7" class="empty-state">Unable to load records.</td></tr>';
+        }
+      }
+
+      function updateAuthView() {
+        const token = getToken();
+        const isLoggedIn = Boolean(token);
+
+        loginCard.classList.toggle('hidden', isLoggedIn);
+        dashboardView.classList.toggle('hidden', !isLoggedIn);
+
+        if (isLoggedIn) {
+          loadInquiries();
+        }
+      }
+
+      loginForm.addEventListener('submit', async (event) => {
+        event.preventDefault();
+
+        const payload = {
+          email: document.getElementById('adminEmail').value,
+          password: document.getElementById('adminPassword').value,
+        };
+
+        try {
+          const response = await fetch('/api/admin/login', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload),
+          });
+
+          const result = await response.json();
+
+          if (!response.ok) {
+            throw new Error(result.message || 'Login failed.');
+          }
+
+          saveToken(result.token);
+          loginForm.reset();
+          updateAuthView();
+        } catch (error) {
+          showLoginNotice(error.message || 'Login failed.', 'error');
+        }
+      });
+
+      document.getElementById('logoutButton').addEventListener('click', () => {
+        clearToken();
+        updateAuthView();
+      });
+
+      categoryFilter.addEventListener('change', loadInquiries);
+      userTypeFilter.addEventListener('change', loadInquiries);
+      searchInput.addEventListener('input', loadInquiries);
+
+      updateAuthView();
+    </script>
+  </body>
+</html>
